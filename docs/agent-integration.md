@@ -77,7 +77,7 @@ the tool. Only the chart SVG is shared, not the whole screen or credentials.
 
 Mutating tools return a browser command. The UI runs the real `view.edit()` or
 `view.update()`, then submits the actual application receipt and a fresh
-observation. The model verifies the result using state or mark inspection; a screenshot is optional when visual verification is needed.
+observation. The server compares the accepted browser snapshot with the VisDelta-validated target using `delta()`. An applied matching receipt normally ends the turn without another model or image call. Only explicitly dependent operations may continue, with at most two accepted batches per user request.
 Stale revisions abort the action. Read tools and mutation validation execute
 through MCP; no arbitrary JavaScript tool exists.
 
@@ -94,3 +94,29 @@ reasoning and responsiveness. Leave it blank for non-reasoning models. The agent
 retains opaque `reasoning_details` and tool metadata between provider calls, as
 required for reasoning-model tool continuations. They stay in server memory and
 are never shown in the chat or logged.
+
+## Bounded execution
+
+Current state and visible mark observations are supplied in the initial context,
+so the agent does not need to fetch them redundantly. Compatible edits belong in
+one batch. The optional `continueAfterApply` tool flag is reserved for operations
+that depend on observing a newly changed chart (such as sort, then select an
+ordinal mark). A successful ordinary batch ends on its actual browser receipt.
+
+Each phase allows at most two mutation attempts; identical rejected arguments
+are blocked immediately rather than retried. Tool trace entries include errors
+and blocked calls. Chart validation failures carry the real bounded validator
+reason to the model, enabling one useful correction instead of blind retries.
+Repeated reads and incompatible multi-mutation batches are bounded as well.
+
+MCP edit arguments use typed objects, not JSON embedded inside strings. For example:
+
+```json
+{ "revision": 0, "summary": "Show profit in blue", "edits": [
+  { "method": "y", "field": "profit", "type": "quantitative" },
+  { "method": "color", "value": "#4269d0" }
+] }
+```
+
+Liveshow compiles those objects to public VisDelta fluent argument arrays and
+validates the resulting endpoint before the browser receives any mutation.

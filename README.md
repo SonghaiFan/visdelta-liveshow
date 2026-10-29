@@ -8,7 +8,7 @@ A real-time visualization workspace for AI agents. An agent sends a small declar
 
 ## Natural-language chart editing
 
-The app has a presentation canvas and a conversation panel at the lower right. Type a request such as “Show profit instead of revenue, rank highest first, and use blue bars.” The local agent uses real MCP tools to read chart state, inspect visible marks and obtain a PNG through VisDelta public APIs. When it calls `capture_chart`, the chart image is passed to OpenRouter as vision input. Mutating tools run through the browser; the agent receives the actual receipt and checks the resulting picture before replying. Ambiguous requests produce a clarifying question without changing the chart.
+The app has a presentation canvas and a conversation panel at the lower right. Type a request such as “Show profit instead of revenue, rank highest first, and use blue bars.” The local agent uses real MCP tools to read chart state, inspect visible marks and obtain a PNG through VisDelta public APIs. When it calls `capture_chart`, the chart image is passed to OpenRouter as vision input. Mutating tools run through the browser; the actual browser snapshot is checked against the VisDelta-validated target before replying. Ordinary requests normally finish after one edit batch; dependent operations may explicitly continue to a second batch. Identical failed edits are blocked, and one correction is allowed. Ambiguous requests produce a clarifying question without changing the chart.
 
 ### Add your key
 

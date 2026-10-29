@@ -60,7 +60,7 @@ export function validateInput(input) {
   }
   return { prompt: input.prompt.trim(), revision: input.revision, spec };
 }
-export async function validatePlan(plan, input) {
+export async function validatePlan(plan, input, includeTarget = false) {
   if (!plan || typeof plan.explanation !== 'string' || plan.explanation.length > 1200 || !Array.isArray(plan.edits)
       || plan.edits.length > 8 || plan.edits.some(edit => !edit || !methods.includes(edit.method) || !Array.isArray(edit.args))) {
     throw new AIError(502, 'The model returned an invalid edit plan. Try rephrasing your request.');
@@ -69,14 +69,17 @@ export async function validatePlan(plan, input) {
   if (!['edit', 'reset', 'undo', 'redo'].includes(action) || (action !== 'edit' && plan.edits.length)) throw new AIError(502, 'Invalid application action.');
   if (action !== 'edit') return { action, explanation: plan.explanation, message: null };
   if (!plan.edits.length) return { explanation: plan.explanation, message: null };
+  let targetSpec;
   // VisDelta validates the real endpoint against resolved data, before the browser mutates anything.
   try {
     const resolved = { ...input.spec, data: { values: sales }, encoding: resolveEncodingTypes(sales, input.spec.encoding) };
-    await barModule.edit(input.spec, plan.edits, resolved);
-  } catch {
-    throw new AIError(422, 'VisDelta rejected the proposed edits. Your chart has not changed. Try a simpler request.');
+    targetSpec = await barModule.edit(input.spec, plan.edits, resolved);
+  } catch (error) {
+    const rejection = new AIError(422, 'VisDelta rejected the proposed edits. Your chart has not changed. Try a simpler request.');
+    rejection.details = error instanceof Error ? error.message.slice(0, 600) : 'Invalid VisDelta arguments.';
+    throw rejection;
   }
-  return { explanation: plan.explanation, message: { requestId: randomUUID(), baseRevision: input.revision, edits: plan.edits } };
+  return { ...(includeTarget ? { targetSpec } : {}), explanation: plan.explanation, message: { requestId: randomUUID(), baseRevision: input.revision, edits: plan.edits } };
 }
 export async function generateEdit(raw, { key, model = '', fetchImpl = fetch, signal } = {}) {
   const input = validateInput(raw);

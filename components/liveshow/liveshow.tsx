@@ -179,7 +179,7 @@ export function Liveshow() {
         requestedCapture = undefined;
         if (!response.ok) throw new Error(result.error || 'The agent request failed.');
         if (controller.signal.aborted || view.current !== current) return;
-        tools.push(...(result.trace ?? []).map((entry: { tool: string }) => entry.tool));
+        tools.push(...(result.trace ?? []).map((entry: { tool: string; status?: string; error?: string }) => entry.status === 'error' || entry.status === 'blocked' ? `${entry.tool} [${entry.status}: ${(entry.error || '').slice(0, 160)}]` : entry.tool));
         setChat(items => items.map(item => item.id === id ? { ...item, tools: [...tools] } : item));
         if (current.snapshot().revision !== sent.revision) {
           reply('The chart changed while I was thinking. Please send your request again against the current view.'); return;
