@@ -25,7 +25,7 @@
     "next": "16.3.8",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
-    "visdelta": "file:vendor/visdelta-0.4.2.tgz"
+    "visdelta": "file:vendor/visdelta-0.4.2-empty-state.tgz"
   },
   "devDependencies": {
     "@playwright/test": "1.63.0",

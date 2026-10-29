@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import type { ViewSpec } from 'visdelta/core';
 import { delta } from 'visdelta/core';
 import type { ChartView, UpdateResult } from 'visdelta/render';
 import { categories } from '@/examples/registry';
@@ -12,6 +13,15 @@ const json = (spec: unknown) => JSON.stringify(spec, null, 2);
 export function Liveshow() {
   const host = useRef<HTMLDivElement>(null);
   const view = useRef<ChartView | null>(null);
+  const past = useRef<ViewSpec[]>([]);
+  const future = useRef<ViewSpec[]>([]);
+  const [history, setHistory] = useState({ past: 0, future: 0 });
+  const activeUpdates = useRef(0);
+  const [updating, setUpdating] = useState(false);
+  function refreshHistory() { setHistory({ past: past.current.length, future: future.current.length }); }
+  const [restoring, setRestoring] = useState(false);
+  const historyLock = useRef(false);
+  const [draftComplete, setDraftComplete] = useState(false);
   const nextId = useRef(0);
   const [ready, setReady] = useState(false);
   const [selected, setSelected] = useState('encoding');
@@ -66,17 +76,23 @@ export function Liveshow() {
     };
   }, []);
 
-  async function submit(text: string, label: string, complete = false) {
+  async function submit(text: string, label: string, complete = false, recordHistory = true) {
     const current = view.current;
-    if (!current) return;
+    if (!current || (historyLock.current && recordHistory)) return;
+    activeUpdates.current++; setUpdating(true);
     const id = ++nextId.current;
     setError('');
     setReceipts(items => [{ id, label, status: 'submitted' as const }, ...items].slice(0, 8));
     try {
-      const before = current.snapshot().spec;
+      const beforeSnapshot = current.snapshot();
+      const before = beforeSnapshot.spec;
       const settings = { duration, animate: !matchMedia('(prefers-reduced-motion: reduce)').matches };
       const result = await (complete ? current.update(text, settings) : current.edit(text, settings));
       if (view.current !== current) return;
+      if (recordHistory && result.revision !== undefined && result.revision > beforeSnapshot.revision) {
+        past.current = [...past.current, before].slice(-40); future.current = [];
+        refreshHistory();
+      }
       setRevision(current.snapshot().revision);
       setChanges(delta(before, current.snapshot().spec).stateChanges.map(change => `${change.category}.${change.action}`));
       setReceipts(items => items.map(item => item.id === id ? { ...item, status: result.status } : item));
@@ -85,7 +101,27 @@ export function Liveshow() {
       if (view.current !== current) return;
       setError(reason instanceof Error ? reason.message : String(reason));
       setReceipts(items => items.map(item => item.id === id ? { ...item, status: 'rejected' } : item));
-    }
+    } finally { activeUpdates.current--; setUpdating(activeUpdates.current > 0); }
+  }
+
+  async function restore(action: 'reset' | 'undo' | 'redo', label = action as string) {
+    const current = view.current;
+    if (!current || historyLock.current || activeUpdates.current > 0) return;
+    const target = action === 'reset' ? initialSpec : action === 'undo' ? past.current.at(-1) : future.current.at(-1);
+    if (!target) return;
+    historyLock.current = true; setRestoring(true);
+    const before = current.snapshot().spec;
+    try {
+      const result = await submit(json(target), label, true, false);
+      if (result?.status === 'applied') {
+        if (action === 'undo') { past.current.pop(); future.current.push(before); }
+        else if (action === 'redo') { future.current.pop(); past.current.push(before); }
+        else { past.current = [...past.current, before].slice(-40); future.current = []; }
+        refreshHistory();
+        setDraftComplete(true); setSelected('ai'); setDraft(json(target));
+      }
+      return result;
+    } finally { historyLock.current = false; setRestoring(false); }
   }
 
   function message(category: string) {
@@ -137,8 +173,16 @@ export function Liveshow() {
       if (current.snapshot().revision !== snapshot.revision) {
         reply('The chart changed while I was thinking. Please send your request again against the current view.'); return;
       }
+      if (['reset', 'undo', 'redo'].includes(result.action)) {
+        const action = result.action as 'reset' | 'undo' | 'redo';
+        if ((action === 'undo' && !past.current.length) || (action === 'redo' && !future.current.length)) {
+          reply(action === 'undo' ? 'There is no earlier chart state to undo.' : 'There is no undone chart state to redo.'); return;
+        }
+        const restored = await restore(action, text);
+        reply(restored?.status === 'applied' ? result.explanation : 'The restoration was not applied.'); return;
+      }
       if (!result.message) { reply(result.explanation); return; }
-      setSelected('ai'); setDraft(json(result.message));
+      setSelected('ai'); setDraftComplete(false); setDraft(json(result.message));
       const applied = await submit(json(result.message), text);
       if (controller.signal.aborted) return;
       reply(applied?.status === 'applied' ? result.explanation : applied?.status === 'superseded' ? 'Replaced by a newer chart update.' : 'VisDelta could not apply this edit. Your last valid chart is preserved.');
@@ -156,6 +200,11 @@ export function Liveshow() {
   return (
     <div className="live-workspace">
       <div className="live-toolbar">
+        <div className="flex gap-1">
+          <button type="button" className="pg-tool" disabled={!ready || restoring || updating || !history.past} onClick={() => { cancelAI(); void restore('undo'); }}>Undo</button>
+          <button type="button" className="pg-tool" disabled={!ready || restoring || updating || !history.future} onClick={() => { cancelAI(); void restore('redo'); }}>Redo</button>
+          <button type="button" className="pg-tool" disabled={!ready || restoring || updating} onClick={() => { cancelAI(); void restore('reset'); }}>Reset</button>
+        </div>
         <div><h1>Liveshow</h1><p>Think out loud. Change the view.</p></div>
         <span role="status">{ready ? `Ready · revision ${revision}` : 'Preparing chart…'}</span>
         <label className="live-speed">Motion <select aria-label="Transition speed" value={duration} onChange={event => setDuration(Number(event.target.value))}><option value={250}>Quick</option><option value={550}>Natural</option><option value={1000}>Slow</option></select></label>
@@ -186,12 +235,12 @@ export function Liveshow() {
         <summary>Explore presets, data &amp; generated edits</summary>
         <div className="live-inspector-content">
           <section aria-label="Example instructions">
-            <nav aria-label="State-change categories" className="live-categories">{categories.map(category => <button key={category.id} type="button" aria-pressed={selected === category.id} className="pg-tool" onClick={() => { setSelected(category.id); setDraft(category.id === 'grain' ? json(liveshowPresets[1].spec) : message(category.id)); }}>{category.label}</button>)}</nav>
-            <div className="live-preset"><p>“{preset?.prompt ?? 'Your AI-generated edit'}”</p><button type="button" className="pg-tool pg-tool-primary" disabled={!ready || !preset} onClick={() => { if (!preset) return; const text = selected === 'grain' ? json(preset.spec) : message(selected); setDraft(text); void submit(text, preset.prompt, selected === 'grain'); }}>Send preset</button></div>
+            <nav aria-label="State-change categories" className="live-categories">{categories.map(category => <button key={category.id} type="button" aria-pressed={selected === category.id} className="pg-tool" onClick={() => { setSelected(category.id); setDraftComplete(category.id === 'grain'); setDraft(category.id === 'grain' ? json(liveshowPresets[1].spec) : message(category.id)); }}>{category.label}</button>)}</nav>
+            <div className="live-preset"><p>“{preset?.prompt ?? 'Your AI-generated edit'}”</p><button type="button" className="pg-tool pg-tool-primary" disabled={!ready || !preset} onClick={() => { if (!preset) return; const text = selected === 'grain' ? json(preset.spec) : message(selected); setDraftComplete(selected === 'grain'); setDraft(text); void submit(text, preset.prompt, selected === 'grain'); }}>Send preset</button></div>
           </section>
           <div className="live-inspector-grid">
             <section><h2>Source data</h2><table className="w-full text-left text-xs"><thead><tr><th>Product</th><th>Revenue</th><th>Profit</th></tr></thead><tbody>{sales.map(row => <tr key={row.product}><th scope="row">{row.product}</th><td>{row.revenue}</td><td>{row.profit}</td></tr>)}</tbody></table></section>
-            <section><h2>Fluent JSON edit</h2><textarea aria-label="Next chart JSON" spellCheck={false} value={draft} onChange={event => setDraft(event.target.value)} className="live-json" /><div className="live-editor-actions"><button type="button" className="pg-tool" disabled={!ready} onClick={() => { cancelAI(); void submit(json(initialSpec), 'Reset to revenue', true).then(() => { if (view.current) { setSelected('encoding'); setDraft(message('encoding')); } }); }}>Reset</button><button type="button" className="pg-tool pg-tool-primary" disabled={!ready} onClick={() => void submit(draft, 'Custom JSON', selected === 'grain')}>Send JSON</button></div><p className="live-changes">{changes.join(' · ') || 'Send an instruction to inspect its state changes.'}</p></section>
+            <section><h2>Fluent JSON edit</h2><textarea aria-label="Next chart JSON" spellCheck={false} value={draft} onChange={event => setDraft(event.target.value)} className="live-json" /><div className="live-editor-actions"><span>{draftComplete ? 'Complete chart · update()' : 'Incremental edit · edit()'}</span><button type="button" className="pg-tool pg-tool-primary" disabled={!ready} onClick={() => void submit(draft, 'Custom JSON', draftComplete)}>Send JSON</button></div><p className="live-changes">{changes.join(' · ') || 'Send an instruction to inspect its state changes.'}</p></section>
             <section><h2>Update results</h2><button type="button" className="pg-tool" disabled={!ready} onClick={burst}>Send burst</button><ol aria-label="Update results" className="live-receipts">{receipts.map(item => <li key={item.id}><span>{item.label}</span><code>{item.status}</code></li>)}</ol></section>
           </div>
         </div>

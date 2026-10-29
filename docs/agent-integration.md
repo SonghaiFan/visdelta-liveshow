@@ -53,7 +53,7 @@ User text can request another edit during generation; the previous HTTP request 
 
 Implementation: `server/ai.mjs` owns provider calls and validation; `server/http.mjs` owns loopback HTTP guards, body/concurrency limits and cancellation; `components/liveshow/liveshow.tsx` owns the conversation and chart lifecycle. Provider error bodies and credentials are never logged or returned.
 
-The server supports the existing bar edit subset: x, y, where, sort, flip, color, focus and highlight. It does not yet generate complete chart replacements, change chart types, remove filters or accept new data. These limitations are included in the model instructions. Presets retain Grain via complete `update()` declarations.
+The server supports the existing bar edit subset: x, y, where, sort, flip, color, focus and highlight. The application also handles explicit reset, undo and redo actions by restoring locally owned complete states through `view.update()`. Reset clears all changes; undo/redo navigate accepted session history. It does not let the model generate arbitrary complete replacements, change chart types, selectively remove individual filters or accept new data. These limitations are included in the model instructions. Presets retain Grain via complete `update()` declarations.
 
 ## Deployment boundary
 

@@ -69,3 +69,11 @@ test('shorthand model calls are rejected instead of silently changing the chart'
  const shorthand = { explanation: 'Show profit', edits: [{ y: 'profit', args: [{ type: 'quantitative' }] }, { sort: 'profit', args: ['descending'] }, { color: ['#4269d0'] }] };
  await assert.rejects(generateEdit(input, { key: 'test-only', fetchImpl: async () => Response.json({ choices: [{ message: { content: JSON.stringify(shorthand) } }] }) }), /complete JSON/);
 });
+
+test('reset, undo and redo are supported application actions without invented edit methods', async () => {
+ for (const action of ['reset', 'undo', 'redo']) {
+  const result = await generateEdit({ ...input, prompt: action }, { key: 'test-only', fetchImpl: async () => Response.json({ choices: [{ message: { content: JSON.stringify({ action, explanation: action, edits: [] }) } }] }) });
+  assert.equal(result.action, action); assert.equal(result.message, null);
+  await assert.rejects(validatePlan({ ...plan, action }, validateInput(input)), /Invalid application action/);
+ }
+});

@@ -40,7 +40,7 @@ The start command prints the correct local URL, including the base path used by 
 
 Remap revenue/profit, filter rows, sort, flip axes, change fixed bar colors, focus and highlight. Compound requests can produce multiple edits; Natural/Quick/Slow controls the VisDelta transition duration per stage. Current chart state carries context into subsequent requests.
 
-The model cannot invent data or execute code. Unsupported requests (including changing chart type/grain or removing an existing filter) return an explanation without changing the chart. Presets still demonstrate all seven categories, including complete-state Grain updates. A newer request cancels pending AI generation; late replies based on an older chart revision are discarded. Reset restores the original chart.
+The model cannot invent data or execute code. Natural-language reset/复原 restores the initial chart, undo/撤销 restores the previous accepted state, and redo/重做 reapplies an undone state. These actions restore complete declarations via `update()` and retain VisDelta transitions. Undo, Redo and Reset are also available in the toolbar; history is session-local and capped at 40 states. A new edit clears redo history. Unsupported requests (including changing chart type/grain or removing only one specific filter while preserving all other changes) return an explanation without changing the chart. Presets still demonstrate all seven categories, including complete-state Grain updates. A newer request cancels pending AI generation; late replies based on an older chart revision are discarded. Reset restores the original chart.
 
 Presets, source data, generated JSON, state-change categories and update receipts are available under “Explore presets, data & generated edits”. Voice input is not implemented yet.
 
@@ -59,7 +59,7 @@ Server tests exercise OpenRouter request construction and error handling with a 
 
 ## Dependency boundary
 
-Only public `visdelta/core`, `visdelta/bar`, `visdelta/render` and `visdelta/style.css` exports are used. The repository includes the installable VisDelta 0.4.2 package snapshot in `vendor/`; no sibling checkout or private source imports are required. `npm run boundary:check` guards that boundary. Update the package snapshot and lockfile together when upgrading VisDelta.
+Only public `visdelta/core`, `visdelta/bar`, `visdelta/render` and `visdelta/style.css` exports are used. The repository includes the installable VisDelta 0.4.2 package snapshot in `vendor/` (including the empty-state layout/restoration fix); no sibling checkout or private source imports are required. `npm run boundary:check` guards that boundary. Update the package snapshot and lockfile together when upgrading VisDelta.
 
 ## Deployment
 

@@ -56,3 +56,30 @@ test('static hosting explains that AI requires a local service', async ({ page }
  await page.getByLabel('Describe a chart change').fill('Show profit');
  await expect(page.getByRole('button', { name: 'Send', exact: true })).toBeDisabled();
 });
+
+test('filter to an empty chart, reset in chat, undo, redo, and restore again', async ({ page }) => {
+ await page.route('**/api/liveshow/status/', route => route.fulfill({ json: { configured: true } }));
+ await page.route('**/api/liveshow/edit/', route => {
+  const body = route.request().postDataJSON();
+  return route.fulfill({ json: body.prompt === '复原' ? { action: 'reset', explanation: '已恢复原始图表。', message: null } : { explanation: 'Only revenue at most 40.', message: { requestId: 'filter-empty', baseRevision: body.revision, edits: [{ method: 'where', args: [{ revenue: { lte: 40 } }] }] } } });
+ });
+ await page.goto(''); await expect(page.getByRole('status')).toContainText('Ready');
+ const bars = page.locator('.liveshow-chart svg rect');
+ const original = await bars.evaluateAll(nodes => nodes.map(node => node.getAttribute('height')));
+ await page.getByLabel('Describe a chart change').fill('去掉高于40的');
+ await page.getByRole('button', { name: 'Send', exact: true }).click();
+ await expect(page.getByRole('log')).toContainText('Only revenue at most 40.');
+ await expect(page.getByText('No rows after transforms.', { exact: true })).toBeVisible();
+ await page.getByLabel('Describe a chart change').fill('复原');
+ await page.getByRole('button', { name: 'Send', exact: true }).click();
+ await expect(page.getByRole('log')).toContainText('已恢复原始图表。');
+ await expect.poll(() => bars.evaluateAll(nodes => nodes.map(node => node.getAttribute('height')))).toEqual(original);
+ await expect(page.getByText('No rows after transforms.', { exact: true })).not.toBeVisible();
+ await page.getByRole('button', { name: 'Undo', exact: true }).click();
+ await expect(page.getByRole('button', { name: 'Redo', exact: true })).toBeEnabled();
+ await expect(page.getByText('No rows after transforms.', { exact: true })).toBeVisible();
+ await page.getByRole('button', { name: 'Redo', exact: true }).click();
+ await expect(page.getByRole('button', { name: 'Redo', exact: true })).toBeDisabled();
+ await expect.poll(() => bars.evaluateAll(nodes => nodes.map(node => node.getAttribute('height')))).toEqual(original);
+ await expect(page.getByText('No rows after transforms.', { exact: true })).not.toBeVisible();
+});
