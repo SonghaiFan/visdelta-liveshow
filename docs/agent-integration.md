@@ -45,7 +45,7 @@ The latest policy can supersede pending animation while retaining accepted inten
 
 `npm run dev` starts the loopback AI service and the Next.js UI. Next proxies `/api/liveshow/status/` and `/api/liveshow/edit/` to that service. `npm start` serves a production static export with those routes on the same local origin. GitHub Pages serves static assets only and shows AI as unavailable.
 
-The server reads `OPENROUTER_API_KEY` and optional `OPENROUTER_MODEL` from ignored `.env.local`. It calls [OpenRouter chat completions](https://openrouter.ai/docs/api_reference/overview) with JSON output, sending the current snapshot and prompt. It validates allowed methods and the derived endpoint using public `barModule.edit()` against the built-in sales rows, then returns a server-generated request ID and the original base revision.
+The server reads `OPENROUTER_API_KEY` and optional `OPENROUTER_MODEL` from ignored `.env.local`. It calls [OpenRouter chat completions](https://openrouter.ai/docs/api_reference/overview) with strict JSON schema output, sending the current snapshot and prompt. It validates allowed methods and the derived endpoint using public `barModule.edit()` against the built-in sales rows, then returns a server-generated request ID and the original base revision.
 
 The browser checks that its revision is still current, displays the generated message and calls `view.edit()` with animated updates. That persistent renderer uses VisDelta's transition planner for the actual route. Reduced-motion preferences disable animation. No model output is executed as JavaScript.
 

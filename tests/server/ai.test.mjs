@@ -13,9 +13,10 @@ test('OpenRouter request produces a real VisDelta-validated versioned edit', asy
     assert.equal(init.headers.Authorization, 'Bearer test-only');
     const body = JSON.parse(init.body);
     assert.equal(body.model, 'test/model');
-    assert.deepEqual(body.response_format, { type: 'json_object' });
+    assert.equal(body.response_format.type, 'json_schema');
+    assert.equal(body.response_format.json_schema.strict, true);
     assert.equal(JSON.parse(body.messages[1].content).revision, 3);
-    return Response.json({ choices: [{ message: { content: JSON.stringify(plan) } }] });
+    return Response.json({ choices: [{ message: { content: JSON.stringify({ ...plan, edits: plan.edits.map(({ method, args }) => ({ method, arguments: JSON.stringify(args) })) }) } }] });
   } });
   assert.equal(result.message.baseRevision, 3); assert.ok(result.message.requestId);
   assert.deepEqual(result.message.edits, plan.edits);
@@ -54,11 +55,17 @@ test('loopback HTTP route checks origin, content type and missing credentials', 
 
 test('HTTP prompt to provider to VisDelta validation returns an applicable edit', async t => {
   const handler = createAIHandler({ key: 'test-only', model: 'test/model',
-    generate: (body, config) => generateEdit(body, { ...config, fetchImpl: async () => Response.json({ choices: [{ message: { content: JSON.stringify(plan) } }] }) }) });
+    generate: (body, config) => generateEdit(body, { ...config, fetchImpl: async () => Response.json({ choices: [{ message: { content: JSON.stringify({ ...plan, edits: plan.edits.map(({ method, args }) => ({ method, arguments: JSON.stringify(args) })) }) } }] }) }) });
   const server = createServer(async (req, res) => { await handler(req, res, new URL(req.url, 'http://localhost').pathname); });
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   t.after(() => server.close());
   const response = await fetch(`http://127.0.0.1:${server.address().port}/api/liveshow/edit/`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input) });
   assert.equal(response.status, 200);
   const result = await response.json(); assert.deepEqual(result.message.edits, plan.edits); assert.equal(result.message.baseRevision, 3);
+});
+
+// Captured from the first real GPT-4.1 Mini request: valid JSON, wrong fluent-call shape.
+test('shorthand model calls are rejected instead of silently changing the chart', async () => {
+ const shorthand = { explanation: 'Show profit', edits: [{ y: 'profit', args: [{ type: 'quantitative' }] }, { sort: 'profit', args: ['descending'] }, { color: ['#4269d0'] }] };
+ await assert.rejects(generateEdit(input, { key: 'test-only', fetchImpl: async () => Response.json({ choices: [{ message: { content: JSON.stringify(shorthand) } }] }) }), /complete JSON/);
 });

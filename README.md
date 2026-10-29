@@ -19,7 +19,7 @@ npm ci
 cp .env.example .env.local
 ```
 
-Paste your key after `OPENROUTER_API_KEY=` in `.env.local`. Optionally set `OPENROUTER_MODEL` to an OpenRouter model ID supporting JSON output. Leaving it blank uses your account default. The local `.env.local` is ignored by Git. Never add a `NEXT_PUBLIC_` prefix to the key.
+Paste your key after `OPENROUTER_API_KEY=` in `.env.local`. Optionally set `OPENROUTER_MODEL` to an OpenRouter model ID supporting strict JSON schema output. Leaving it blank uses your account default. The local `.env.local` is ignored by Git. Never add a `NEXT_PUBLIC_` prefix to the key.
 
 ```sh
 npm run dev
