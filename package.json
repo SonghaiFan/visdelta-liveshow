@@ -5,15 +5,16 @@
   "description": "A real-time visualization workspace for AI agents, built on the public VisDelta API.",
   "type": "module",
   "scripts": {
-    "dev": "next dev --port 4323",
+    "dev": "node scripts/dev.mjs",
     "build": "npm run boundary:check && npm run presets:check && next build --webpack && node scripts/postbuild.mjs",
     "start": "node scripts/serve-out.mjs 4323",
     "lint": "eslint",
     "types:check": "next typegen && tsc --noEmit",
     "boundary:check": "node scripts/check-boundary.mjs",
     "test": "playwright test",
-    "check": "npm run lint && npm run types:check && npm run build && npm test",
-    "presets:check": "node scripts/verify-presets.mjs"
+    "check": "npm run test:server && npm run lint && npm run types:check && npm run build && npm test",
+    "presets:check": "node scripts/verify-presets.mjs",
+    "test:server": "node --test tests/server/*.test.mjs"
   },
   "dependencies": {
     "cn": "^0.4.0",

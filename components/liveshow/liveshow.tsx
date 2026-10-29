@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import { delta } from 'visdelta/core';
 import type { ChartView, UpdateResult } from 'visdelta/render';
 import { categories } from '@/examples/registry';
 import { initialSpec, liveshowPresets, presetEdits, sales } from './presets';
@@ -18,6 +19,28 @@ export function Liveshow() {
   const [receipts, setReceipts] = useState<Receipt[]>([]);
   const [error, setError] = useState('');
   const [revision, setRevision] = useState(0);
+  const [prompt, setPrompt] = useState('');
+  const [connection, setConnection] = useState('Checking local AI…');
+  const [aiReady, setAiReady] = useState(false);
+  const [thinking, setThinking] = useState(false);
+  const [duration, setDuration] = useState(550);
+  const [changes, setChanges] = useState<string[]>([]);
+  const [chat, setChat] = useState<{ id: number; prompt: string; reply: string }[]>([]);
+  const log = useRef<HTMLDivElement>(null);
+  useEffect(() => { if (log.current) log.current.scrollTop = log.current.scrollHeight; }, [chat]);
+  const pending = useRef<AbortController | null>(null);
+  const aiId = useRef(0);
+  const api = `${process.env.NEXT_PUBLIC_BASE_PATH ?? ''}/api/liveshow`;
+  useEffect(() => {
+    const controller = new AbortController();
+    fetch(`${api}/status/`, { signal: controller.signal }).then(async response => {
+      if (!response.ok) throw new Error();
+      const status = await response.json();
+      setAiReady(status.configured === true);
+      setConnection(status.configured ? `OpenRouter · ${status.model}` : 'Add your key to .env.local, then restart');
+    }).catch(() => { if (!controller.signal.aborted) setConnection('AI is available in the local app'); });
+    return () => { controller.abort(); pending.current?.abort(); };
+  }, [api]);
   const preset = liveshowPresets.find(item => item.category === selected)!;
 
   useEffect(() => {
@@ -50,11 +73,14 @@ export function Liveshow() {
     setError('');
     setReceipts(items => [{ id, label, status: 'submitted' as const }, ...items].slice(0, 8));
     try {
-      const settings = { animate: !matchMedia('(prefers-reduced-motion: reduce)').matches };
+      const before = current.snapshot().spec;
+      const settings = { duration, animate: !matchMedia('(prefers-reduced-motion: reduce)').matches };
       const result = await (complete ? current.update(text, settings) : current.edit(text, settings));
       if (view.current !== current) return;
       setRevision(current.snapshot().revision);
+      setChanges(delta(before, current.snapshot().spec).stateChanges.map(change => `${change.category}.${change.action}`));
       setReceipts(items => items.map(item => item.id === id ? { ...item, status: result.status } : item));
+      return result;
     } catch (reason) {
       if (view.current !== current) return;
       setError(reason instanceof Error ? reason.message : String(reason));
@@ -92,63 +118,86 @@ export function Liveshow() {
     }
   }
 
+  async function ask() {
+    const current = view.current;
+    if (!current || !prompt.trim() || !aiReady) return;
+    pending.current?.abort();
+    const controller = new AbortController(); pending.current = controller;
+    const id = ++aiId.current;
+    const text = prompt.trim(); const snapshot = current.snapshot();
+    setPrompt(''); setThinking(true);
+    setChat(items => [...items.map(item => item.reply === 'Thinking…' ? { ...item, reply: 'Replaced by your next request.' } : item), { id, prompt: text, reply: 'Thinking…' }].slice(-12));
+    const reply = (value: string) => setChat(items => items.map(item => item.id === id ? { ...item, reply: value } : item));
+    try {
+      const response = await fetch(`${api}/edit/`, { method: 'POST', signal: controller.signal,
+        headers: { 'Content-Type': 'application/json' }, body: json({ prompt: text, ...snapshot }) });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || 'The AI request failed.');
+      if (controller.signal.aborted || view.current !== current) return;
+      if (current.snapshot().revision !== snapshot.revision) {
+        reply('The chart changed while I was thinking. Please send your request again against the current view.'); return;
+      }
+      if (!result.message) { reply(result.explanation); return; }
+      setSelected('ai'); setDraft(json(result.message));
+      const applied = await submit(json(result.message), text);
+      if (controller.signal.aborted) return;
+      reply(applied?.status === 'applied' ? result.explanation : applied?.status === 'superseded' ? 'Replaced by a newer chart update.' : 'VisDelta could not apply this edit. Your last valid chart is preserved.');
+    } catch (reason) {
+      if (!controller.signal.aborted) reply(reason instanceof Error ? reason.message : 'Unable to reach the local AI service.');
+    } finally {
+      if (pending.current === controller) { pending.current = null; setThinking(false); }
+    }
+  }
+  function cancelAI() {
+    pending.current?.abort(); pending.current = null; setThinking(false);
+    setChat(items => items.map(item => item.reply === 'Thinking…' ? { ...item, reply: 'Cancelled.' } : item));
+  }
+
   return (
-    <div className="mx-auto max-w-[1600px] space-y-6 p-4 sm:p-6 lg:p-8">
-      <header className="flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <p className="mb-2 text-xs uppercase tracking-widest text-fd-muted-foreground">AI / live visualization</p>
-          <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">Liveshow</h1>
-          <p className="mt-2 max-w-xl text-sm text-fd-muted-foreground">A small JSON edit. An existing chart. The same chart, changing in place.</p>
-        </div>
-        <span className="rounded-sm border px-3 py-1.5 text-xs text-fd-muted-foreground">Local presets · no AI connected</span>
-      </header>
-
-      <section aria-label="Example instructions" className="rounded-sm border bg-fd-card">
-        <nav aria-label="State-change categories" className="flex flex-wrap gap-1 border-b p-2">
-          {categories.map(category => <button key={category.id} type="button" aria-pressed={selected === category.id}
-            className="rounded-sm px-3 py-2 text-xs text-fd-muted-foreground hover:text-fd-foreground aria-pressed:bg-fd-accent aria-pressed:text-fd-foreground"
-            onClick={() => { setSelected(category.id); setDraft(category.id === 'grain' ? json(liveshowPresets[1].spec) : message(category.id)); }}>
-            {category.label}
-          </button>)}
-        </nav>
-        <div className="flex flex-wrap items-center justify-between gap-3 p-4">
-          <div><p className="mb-1 text-xs text-fd-muted-foreground">Try an instruction</p><p className="text-sm">“{preset.prompt}”</p></div>
-          <button type="button" className="pg-tool pg-tool-primary" disabled={!ready} onClick={() => { const text = selected === 'grain' ? json(preset.spec) : message(selected); setDraft(text); void submit(text, preset.prompt, selected === 'grain'); }}>Send preset</button>
-        </div>
-      </section>
-
-      <div className="grid min-w-0 gap-4 xl:grid-cols-[230px_minmax(280px,0.9fr)_minmax(0,1.4fr)]">
-        <section aria-labelledby="liveshow-data" className="min-w-0 rounded-sm border bg-fd-card p-4">
-          <h2 id="liveshow-data" className="text-sm font-medium">01 / Source data</h2>
-          <p className="mt-1 text-xs text-fd-muted-foreground">Illustrative sales · amounts in $k</p>
-          <table className="mt-5 w-full text-left text-xs">
-            <thead><tr className="border-b text-fd-muted-foreground"><th className="pb-2 font-normal">Product</th><th className="pb-2 text-right font-normal">Revenue</th><th className="pb-2 text-right font-normal">Profit</th></tr></thead>
-            <tbody>{sales.map(row => <tr key={row.product} className="border-b last:border-0"><th scope="row" className="py-3 font-normal">{row.product}</th><td className="text-right tabular-nums">{row.revenue}</td><td className="text-right tabular-nums">{row.profit}</td></tr>)}</tbody>
-          </table>
-          <p className="mt-5 text-xs leading-relaxed text-fd-muted-foreground">Edits build on the accepted chart. Filters and highlights accumulate. Reset restores the original chart. Grain uses a complete state replacement.</p>
-        </section>
-
-        <section aria-labelledby="liveshow-spec" className="flex min-w-0 flex-col rounded-sm border bg-fd-card">
-          <div className="border-b p-4"><h2 id="liveshow-spec" className="text-sm font-medium">02 / Fluent JSON edit</h2><p className="mt-1 text-xs text-fd-muted-foreground">{selected === 'grain' ? 'Grain: complete state via update().' : 'Edit commands, then send via edit(). Resending the same request is safe.'}</p></div>
-          <textarea aria-label="Next chart JSON" spellCheck={false} value={draft} onChange={event => setDraft(event.target.value)}
-            onKeyDown={event => { if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') { event.preventDefault(); void submit(draft, 'Custom JSON', selected === 'grain'); } }}
-            className="min-h-[340px] w-full flex-1 resize-y bg-transparent p-4 font-mono text-xs leading-5 outline-offset-[-2px]" />
-          <div className="flex justify-between gap-2 border-t p-3"><button type="button" className="pg-tool" disabled={!ready} onClick={() => { void submit(json(initialSpec), 'Reset to revenue', true).then(() => { if (view.current) setDraft(selected === 'grain' ? json(preset.spec) : message(selected)); }); }}>Reset</button><button type="button" className="pg-tool pg-tool-primary" disabled={!ready} onClick={() => void submit(draft, 'Custom JSON', selected === 'grain')}>Send JSON</button></div>
-      {error ? <p role="alert" className="break-words rounded-sm border border-red-400/40 p-3 text-sm text-red-600 dark:text-red-400">{error}</p> : null}
-        </section>
-
-        <section aria-labelledby="liveshow-chart" className="min-w-0 rounded-sm border bg-fd-card">
-          <div className="flex items-center justify-between gap-2 border-b p-4"><h2 id="liveshow-chart" className="text-sm font-medium">03 / Live chart</h2><span role="status" className="text-xs text-fd-muted-foreground">{ready ? `Ready · revision ${revision}` : 'Preparing chart…'}</span></div>
-          <div ref={host} className="liveshow-chart min-h-[380px] p-3" />
-          <div className="border-t p-4">
-            <div className="flex flex-wrap items-center justify-between gap-3"><div><h3 className="text-sm font-medium">Change your mind, quickly.</h3><p className="mt-1 text-xs text-fd-muted-foreground">Three accepted edits. Keep their changes; skip superseded pending animations.</p></div><button type="button" className="pg-tool" disabled={!ready} onClick={burst}>Send burst</button></div>
-            <ol aria-label="Update results" className="mt-4 space-y-2 text-xs">
-              {receipts.length === 0 ? <li className="text-fd-muted-foreground">Send an instruction to see its result here.</li> : receipts.map(item => <li key={item.id} className="flex items-center justify-between gap-3 border-t pt-2"><span className="min-w-0 truncate"><span className="mr-2 text-fd-muted-foreground">{item.id.toString().padStart(2, '0')}</span>{item.label}</span><span className="font-mono text-fd-muted-foreground">{item.status}</span></li>)}
-            </ol>
-          </div>
-        </section>
+    <div className="live-workspace">
+      <div className="live-toolbar">
+        <div><h1>Liveshow</h1><p>Think out loud. Change the view.</p></div>
+        <span role="status">{ready ? `Ready · revision ${revision}` : 'Preparing chart…'}</span>
+        <label className="live-speed">Motion <select aria-label="Transition speed" value={duration} onChange={event => setDuration(Number(event.target.value))}><option value={250}>Quick</option><option value={550}>Natural</option><option value={1000}>Slow</option></select></label>
       </div>
-      <footer className="flex flex-wrap items-center justify-between gap-3 text-xs text-fd-muted-foreground"><code>await view.edit(message)</code><a href="https://songhaifan.github.io/visdelta/docs/guides/json/" className="underline underline-offset-4">Build this into your agent →</a></footer>
+
+      <div className="live-stage-layout">
+        <section className="live-stage" aria-label="Presentation canvas">
+          <div className="live-slide-heading"><span className="live-kicker">01 / A live data conversation</span><h2>A different view of sales.</h2><p>Four products. Revenue and profit, in thousands of dollars.</p></div>
+          <div ref={host} className="liveshow-chart live-canvas" />
+          <div className="live-slide-footer"><span>Illustrative sales data</span><span>Powered by VisDelta</span></div>
+        </section>
+
+        <aside className="live-conversation" aria-label="Chart conversation">
+          <div className="live-chat-heading"><div><h2>Talk to the chart</h2><p>{connection}</p></div><span className={`live-dot ${aiReady ? 'is-ready' : ''}`} aria-hidden="true" /></div>
+          <div ref={log} className="live-chat-log" role="log" aria-label="Conversation history" aria-live="polite">
+            {chat.length === 0 ? <div className="live-chat-empty"><p>What would you like to show?</p><span>Try “Show profit instead of revenue, rank highest first, and use blue bars.”</span></div> : chat.map(item => <div key={item.id} className="live-chat-turn"><p className="live-user-message">{item.prompt}</p><p className="live-assistant-message">{item.reply}</p></div>)}
+          </div>
+          <form onSubmit={event => { event.preventDefault(); void ask(); }} className="live-composer">
+            <label htmlFor="chart-prompt" className="sr-only">Describe a chart change</label>
+            <textarea id="chart-prompt" maxLength={2000} rows={3} placeholder="Show profit, highlight Beacon…" value={prompt} onChange={event => setPrompt(event.target.value)} onKeyDown={event => { if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); void ask(); } }} />
+            <div><span>{thinking ? 'Thinking · send again to change direction' : 'Enter to send · Shift + Enter for a new line'}</span>{thinking && <button type="button" className="pg-tool" onClick={cancelAI}>Cancel</button>}<button className="pg-tool pg-tool-primary" disabled={!ready || !aiReady || !prompt.trim()} type="submit">Send</button></div>
+          </form>
+          {!aiReady && <p className="live-local-note">Run this app locally with your OpenRouter key to use AI. The presets below work everywhere.</p>}
+        </aside>
+      </div>
+
+      <details className="live-inspector">
+        <summary>Explore presets, data &amp; generated edits</summary>
+        <div className="live-inspector-content">
+          <section aria-label="Example instructions">
+            <nav aria-label="State-change categories" className="live-categories">{categories.map(category => <button key={category.id} type="button" aria-pressed={selected === category.id} className="pg-tool" onClick={() => { setSelected(category.id); setDraft(category.id === 'grain' ? json(liveshowPresets[1].spec) : message(category.id)); }}>{category.label}</button>)}</nav>
+            <div className="live-preset"><p>“{preset?.prompt ?? 'Your AI-generated edit'}”</p><button type="button" className="pg-tool pg-tool-primary" disabled={!ready || !preset} onClick={() => { if (!preset) return; const text = selected === 'grain' ? json(preset.spec) : message(selected); setDraft(text); void submit(text, preset.prompt, selected === 'grain'); }}>Send preset</button></div>
+          </section>
+          <div className="live-inspector-grid">
+            <section><h2>Source data</h2><table className="w-full text-left text-xs"><thead><tr><th>Product</th><th>Revenue</th><th>Profit</th></tr></thead><tbody>{sales.map(row => <tr key={row.product}><th scope="row">{row.product}</th><td>{row.revenue}</td><td>{row.profit}</td></tr>)}</tbody></table></section>
+            <section><h2>Fluent JSON edit</h2><textarea aria-label="Next chart JSON" spellCheck={false} value={draft} onChange={event => setDraft(event.target.value)} className="live-json" /><div className="live-editor-actions"><button type="button" className="pg-tool" disabled={!ready} onClick={() => { cancelAI(); void submit(json(initialSpec), 'Reset to revenue', true).then(() => { if (view.current) { setSelected('encoding'); setDraft(message('encoding')); } }); }}>Reset</button><button type="button" className="pg-tool pg-tool-primary" disabled={!ready} onClick={() => void submit(draft, 'Custom JSON', selected === 'grain')}>Send JSON</button></div><p className="live-changes">{changes.join(' · ') || 'Send an instruction to inspect its state changes.'}</p></section>
+            <section><h2>Update results</h2><button type="button" className="pg-tool" disabled={!ready} onClick={burst}>Send burst</button><ol aria-label="Update results" className="live-receipts">{receipts.map(item => <li key={item.id}><span>{item.label}</span><code>{item.status}</code></li>)}</ol></section>
+          </div>
+        </div>
+      </details>
+      {error && <p role="alert" className="live-error">{error}</p>}
+      <footer className="live-footer"><code>await view.edit(message)</code><a href="https://songhaifan.github.io/visdelta/docs/guides/json/">VisDelta API ↗</a></footer>
     </div>
   );
 }

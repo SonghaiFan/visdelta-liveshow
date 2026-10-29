@@ -9,6 +9,7 @@ for (const width of [1280, 390]) {
     await page.goto('liveshow/');
     await expect(page.getByRole('link', { name: 'Liveshow', exact: true })).toHaveAttribute('aria-current', 'page');
     await expect(page.getByRole('status')).toContainText('Ready');
+    await page.getByText('Explore presets, data & generated edits', { exact: true }).click();
     const chart = page.locator('.liveshow-chart');
     await expect(chart.locator('svg').first()).toBeVisible();
     await expect(page.getByRole('navigation', { name: 'State-change categories' }).getByRole('button')).toHaveCount(7);

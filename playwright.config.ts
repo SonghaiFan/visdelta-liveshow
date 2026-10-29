@@ -16,6 +16,7 @@ const chromePath = process.env.VISDELTA_CHROME_PATH;
 
 export default defineConfig({
   testDir: './tests',
+  testIgnore: '**/server/**',
   fullyParallel: false,
   workers: 1,
   retries: process.env.CI ? 1 : 0,

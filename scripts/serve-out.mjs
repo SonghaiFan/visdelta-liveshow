@@ -1,3 +1,5 @@
+import './env.mjs';
+import { createAIHandler } from '../server/http.mjs';
 // Minimal static server for `out/` that mirrors GitHub Pages: the export is
 // mounted under LIVESHOW_BASE_PATH, `/path/` serves `/path/index.html`, and
 // unknown paths return the exported 404 page.
@@ -7,6 +9,7 @@ import { readFile, stat } from 'node:fs/promises';
 import { extname, join, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+const handleAI = createAIHandler();
 const root = fileURLToPath(new URL('../out/', import.meta.url));
 const port = Number(process.argv[2] ?? 4323);
 const basePath = exportBasePath();
@@ -57,6 +60,7 @@ createServer(async (request, response) => {
     }
     pathname = pathname.slice(basePath.length) || '/';
   }
+  if (await handleAI(request, response, pathname)) return;
   // GitHub Pages redirects directory URLs without a trailing slash.
   const direct = normalize(join(root, pathname));
   const info = await stat(direct).catch(() => null);
