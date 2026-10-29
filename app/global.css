@@ -1,0 +1,135 @@
+@import 'tailwindcss';
+@import 'fumadocs-ui/css/preset.css';
+
+/*
+ * VisDelta — design tokens.
+ *
+ * Ink on paper, and three brand colours that always mean the same thing,
+ * taken from the logo: a blue circle, a coral triangle and the amber overlap.
+ *
+ *   A  blue   the first state
+ *   B  coral  the second state
+ *   Δ  amber  the difference — the frame in between, a changed line of code
+ *
+ * Nothing else in the interface is coloured.
+ */
+
+@theme {
+  --font-sans: ui-sans-serif, system-ui, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  --color-state-a: #4269d0;
+  --color-state-b: #ff725c;
+  --color-delta: #efb118;
+
+  --color-fd-background: #fafaf8;
+  --color-fd-foreground: #141416;
+  --color-fd-muted: #f1f1ee;
+  --color-fd-muted-foreground: #6b6b72;
+  --color-fd-popover: #ffffff;
+  --color-fd-popover-foreground: #141416;
+  --color-fd-card: #ffffff;
+  --color-fd-card-foreground: #141416;
+  --color-fd-border: #e6e6e1;
+  --color-fd-primary: #141416;
+  --color-fd-primary-foreground: #fafaf8;
+  --color-fd-secondary: #f1f1ee;
+  --color-fd-secondary-foreground: #141416;
+  --color-fd-accent: #efefeb;
+  --color-fd-accent-foreground: #141416;
+  --color-fd-ring: #4269d0;
+  --color-fd-overlay: rgb(15 15 18 / 0.24);
+
+  --radius-xs: 2px;
+  --radius-sm: 3px;
+  --radius-md: 5px;
+  --radius-lg: 7px;
+  --radius-xl: 9px;
+  --radius-2xl: 11px;
+
+  --ease-out-quint: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@theme static {
+  --color-fd-info: #4269d0;
+  --color-fd-warning: #b7801a;
+  --color-fd-error: #d9482f;
+  --color-fd-success: #2f8f5b;
+  --color-fd-idea: #b7801a;
+  --color-fd-diff-remove: rgb(217 72 47 / 0.1);
+  --color-fd-diff-remove-symbol: #d9482f;
+  --color-fd-diff-add: rgb(47 143 91 / 0.1);
+  --color-fd-diff-add-symbol: #2f8f5b;
+}
+
+.dark {
+  --color-state-a: #7f9ef0;
+  --color-state-b: #ff8a76;
+  --color-delta: #f2c14a;
+  --color-fd-background: #0c0c0d;
+  --color-fd-foreground: #ededeb;
+  --color-fd-muted: #161618;
+  --color-fd-muted-foreground: #9a9aa1;
+  --color-fd-popover: #131315;
+  --color-fd-popover-foreground: #ededeb;
+  --color-fd-card: #111113;
+  --color-fd-card-foreground: #ededeb;
+  --color-fd-border: #232326;
+  --color-fd-primary: #ededeb;
+  --color-fd-primary-foreground: #0c0c0d;
+  --color-fd-secondary: #18181b;
+  --color-fd-secondary-foreground: #ededeb;
+  --color-fd-accent: #1b1b1e;
+  --color-fd-accent-foreground: #ededeb;
+  --color-fd-ring: #7f9ef0;
+  --color-fd-overlay: rgb(0 0 0 / 0.5);
+}
+
+html {
+  scrollbar-gutter: stable;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+html > body[data-scroll-locked] {
+  margin-right: 0px !important;
+  --removed-body-scroll-bar-size: 0px !important;
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-fd-ring);
+  outline-offset: 2px;
+}
+
+::selection {
+  background: color-mix(in srgb, var(--color-delta) 35%, transparent);
+}
+
+.pg-tool {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  height: 1.75rem;
+  min-width: 1.75rem;
+  justify-content: center;
+  padding: 0 0.5rem;
+  border-radius: var(--radius-sm);
+  font-size: 0.8125rem;
+  color: var(--color-fd-muted-foreground);
+  transition: background-color 150ms, color 150ms;
+}
+.pg-tool:hover:not(:disabled) {
+  background: var(--color-fd-accent);
+  color: var(--color-fd-foreground);
+}
+.pg-tool:disabled {
+  opacity: 0.4;
+}
+.pg-tool-primary,
+.pg-tool-primary:hover:not(:disabled) {
+  background: var(--color-fd-foreground);
+  color: var(--color-fd-background);
+}
+.pg-tool-primary:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--color-fd-foreground) 85%, transparent);
+}

@@ -1,0 +1,44 @@
+{
+  "name": "visdelta-liveshow",
+  "version": "0.1.0",
+  "private": true,
+  "description": "A real-time visualization workspace for AI agents, built on the public VisDelta API.",
+  "type": "module",
+  "scripts": {
+    "dev": "next dev --port 4323",
+    "build": "npm run boundary:check && npm run presets:check && next build --webpack && node scripts/postbuild.mjs",
+    "start": "node scripts/serve-out.mjs 4323",
+    "lint": "eslint",
+    "types:check": "next typegen && tsc --noEmit",
+    "boundary:check": "node scripts/check-boundary.mjs",
+    "test": "playwright test",
+    "check": "npm run lint && npm run types:check && npm run build && npm test",
+    "presets:check": "node scripts/verify-presets.mjs"
+  },
+  "dependencies": {
+    "cn": "^0.4.0",
+    "d3": "^7.9.0",
+    "fumadocs-core": "16.17.1",
+    "fumadocs-ui": "npm:@fumadocs/base-ui@16.17.1",
+    "lucide-react": "^1.50.0",
+    "next": "16.3.8",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
+    "visdelta": "file:vendor/visdelta-0.4.2.tgz"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.63.0",
+    "@tailwindcss/postcss": "^4.3.3",
+    "@types/d3": "^7.4.3",
+    "@types/mdx": "^2.0.14",
+    "@types/node": "^26.6.4",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "eslint": "^9.39.4",
+    "eslint-config-next": "16.3.8",
+    "postcss": "^8.5.28",
+    "serve": "^14.2.6",
+    "tailwindcss": "^4.3.3",
+    "typescript": "~6.0.3"
+  }
+}

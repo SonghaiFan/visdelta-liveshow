@@ -1,0 +1,13 @@
+.DS_Store
+node_modules/
+.next/
+out/
+*.tsbuildinfo
+next-env.d.ts
+.env*
+!.env.example
+test-results/
+playwright-report/
+public/data/
+public/authoring.mdx
+.source/
