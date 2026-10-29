@@ -86,4 +86,10 @@ history are kept in memory only. A new capture replaces the preceding image.
 The UI shows tool names rather than private reasoning. Ambiguous requests use
 `ask_user`, end the turn without editing, and resume through the next user message
 with recent conversation history. A vision-and-tools capable model is required;
-`openai/gpt-4.1-mini` is the configured demo choice.
+`openai/gpt-4.1-mini` and `google/gemini-3-flash-preview` have been verified in the demo.
+
+For Gemini thinking models, set `OPENROUTER_REASONING_EFFORT=low` to balance
+reasoning and responsiveness. Leave it blank for non-reasoning models. The agent
+retains opaque `reasoning_details` and tool metadata between provider calls, as
+required for reasoning-model tool continuations. They stay in server memory and
+are never shown in the chat or logged.

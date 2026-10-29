@@ -45,3 +45,17 @@ test('multiple read tools are serialized over MCP before forwarding an image', a
  } });
  assert.equal((await run(input, { key: 'test-only' })).explanation, 'Observed.');
 });
+test('reasoning effort is explicit and opaque reasoning metadata survives tool continuation', async () => {
+ let step = 0;
+ const signature = [{ type: 'reasoning.encrypted', data: 'synthetic-opaque-signature' }];
+ const run = createAgentRunner({ fetchImpl: async (_url, init) => {
+  const body = JSON.parse(init.body);
+  assert.deepEqual(body.reasoning, { effort: 'low' });
+  if (!step++) return Response.json({ choices: [{ message: { content: null, reasoning_details: signature, tool_calls: [{ id: 'state', type: 'function', function: { name: 'get_chart_state', arguments: '{}' } }] } }] });
+  assert.deepEqual(body.messages.find(item => item.role === 'assistant').reasoning_details, signature);
+  return Response.json({ choices: [{ message: { content: 'Observed.' } }] });
+ } });
+ const result = await run(input, { key: 'test-only', model: 'test', reasoningEffort: 'low' });
+ assert.equal(result.explanation, 'Observed.');
+ assert.equal('reasoning_details' in result, false);
+});

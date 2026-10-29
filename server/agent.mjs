@@ -13,7 +13,7 @@ Explain concisely in the user's language. You can reason internally, but show to
 
 export function createAgentRunner({ fetchImpl = fetch } = {}) {
   const sessions = new Map();
-  return async function run(raw, { key, model, signal }) {
+  return async function run(raw, { key, model, signal, reasoningEffort = process.env.OPENROUTER_REASONING_EFFORT }) {
     const context = validateInput(raw);
     const image = raw.capture, observation = raw.observation;
     if (!image || image.revision !== context.revision || image.mimeType !== 'image/png' || !/^data:image\/png;base64,[A-Za-z0-9+/=]+$/.test(image.dataUrl) || image.dataUrl.length > 1_800_000
@@ -60,11 +60,11 @@ export function createAgentRunner({ fetchImpl = fetch } = {}) {
       while (session.steps++ < 12) {
         const response = await fetchImpl('https://openrouter.ai/api/v1/chat/completions', { method: 'POST', signal,
           headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json', 'X-OpenRouter-Title': 'VisDelta Liveshow' },
-          body: JSON.stringify({ ...(model ? { model } : {}), messages: session.messages, tools: catalog, provider: { require_parameters: true }, max_tokens: 1400 }) });
+          body: JSON.stringify({ ...(model ? { model } : {}), messages: session.messages, tools: catalog, provider: { require_parameters: true }, ...(reasoningEffort ? { reasoning: { effort: reasoningEffort } } : {}), max_tokens: reasoningEffort ? 4096 : 1400 }) });
         if (!response.ok) throw new AIError(502, 'OpenRouter agent request failed. Check your model supports images and tools.');
         const result = await response.json(); const message = result.choices?.[0]?.message;
         if (!message || result.error || result.choices[0].finish_reason === 'length') throw new AIError(502, 'Incomplete agent response. Please retry.');
-        session.messages.push({ role: 'assistant', content: message.content ?? null, ...(message.tool_calls ? { tool_calls: message.tool_calls } : {}) });
+        session.messages.push({ role: 'assistant', content: message.content ?? null, ...(message.tool_calls ? { tool_calls: message.tool_calls } : {}), ...(message.reasoning_details ? { reasoning_details: message.reasoning_details } : {}) });
         if (!message.tool_calls?.length && session.needsVerification) { session.messages.push({ role: 'user', content: 'Capture the updated chart before reporting completion.' }); continue; }
         if (!message.tool_calls?.length) { sessions.delete(session.id); return { explanation: String(message.content ?? 'No changes made.'), trace }; }
         const reads = ['get_chart_state', 'inspect_marks', 'capture_chart'];
