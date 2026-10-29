@@ -59,3 +59,35 @@ test('reasoning effort is explicit and opaque reasoning metadata survives tool c
  assert.equal(result.explanation, 'Observed.');
  assert.equal('reasoning_details' in result, false);
 });
+test('ordinary named edits work without any screenshot or image input', async () => {
+ let step = 0;
+ const noImage = { ...input, prompt: '高亮 Atlas', capture: undefined };
+ const run = createAgentRunner({ fetchImpl: async (_url, init) => {
+  const request = JSON.parse(init.body);
+  assert.ok(!request.messages.some(message => Array.isArray(message.content) && message.content.some(block => block.type === 'image_url')));
+  if (step++ === 0) return call('get_chart_state');
+  if (step === 2) return call('edit_chart', { revision: 0, edits: [{ method: 'highlight', arguments: '[{"product":"Atlas"}]' }] });
+  if (step === 3) return call('get_chart_state');
+  return Response.json({ choices: [{ message: { content: 'Applied without vision.' } }] });
+ } });
+ const pending = await run(noImage, { key: 'test-only' });
+ assert.equal(pending.command.action, 'edit');
+ const result = await run({ ...noImage, revision: 1, observation: { ...input.observation, revision: 1 }, sessionId: pending.sessionId, toolCallId: pending.toolCallId, receipt: { status: 'applied' } }, { key: 'test-only' });
+ assert.equal(result.explanation, 'Applied without vision.');
+});
+test('image tool pauses for a browser capture and only then forwards the PNG', async () => {
+ let step = 0;
+ const run = createAgentRunner({ fetchImpl: async (_url, init) => {
+  const request = JSON.parse(init.body);
+  if (!step++) {
+   assert.ok(!request.messages.some(message => Array.isArray(message.content)));
+   return call('capture_chart');
+  }
+  assert.ok(request.messages.at(-1).content.some(block => block.type === 'image_url'));
+  return Response.json({ choices: [{ message: { content: 'I can see the chart now.' } }] });
+ } });
+ const pending = await run({ ...input, capture: undefined }, { key: 'test-only' });
+ assert.equal(pending.command.action, 'capture'); assert.equal(step, 1);
+ const result = await run({ ...input, sessionId: pending.sessionId, toolCallId: pending.toolCallId, receipt: { status: 'applied' } }, { key: 'test-only' });
+ assert.equal(result.explanation, 'I can see the chart now.'); assert.equal(step, 2);
+});

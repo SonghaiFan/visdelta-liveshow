@@ -167,15 +167,16 @@ export function Liveshow() {
     try {
       let continuation: { sessionId?: string; toolCallId?: string; receipt?: { status: string; revision?: number } } = {};
       const tools: string[] = [];
+      let requestedCapture: Awaited<ReturnType<ChartView['capture']>> | undefined;
       for (let step = 0; step < 8; step++) {
         if (controller.signal.aborted || view.current !== current) return;
         const observed = current.inspectMarks();
-        const capture = await current.capture();
         const sent = current.snapshot();
-        if (sent.revision !== observed.revision || sent.revision !== capture.revision) throw new Error('Chart changed during observation. Send your request again.');
+        if (sent.revision !== observed.revision || (requestedCapture && sent.revision !== requestedCapture.revision)) throw new Error('Chart changed during observation. Send your request again.');
         const response = await fetch(`${api}/agent/`, { method: 'POST', signal: controller.signal,
-          headers: { 'Content-Type': 'application/json' }, body: json({ prompt: text, ...sent, capture, observation: observed, history: chat.slice(-8), ...continuation }) });
+          headers: { 'Content-Type': 'application/json' }, body: json({ prompt: text, ...sent, ...(requestedCapture ? { capture: requestedCapture } : {}), observation: observed, history: chat.slice(-8), ...continuation }) });
         const result = await response.json();
+        requestedCapture = undefined;
         if (!response.ok) throw new Error(result.error || 'The agent request failed.');
         if (controller.signal.aborted || view.current !== current) return;
         tools.push(...(result.trace ?? []).map((entry: { tool: string }) => entry.tool));
@@ -184,6 +185,12 @@ export function Liveshow() {
           reply('The chart changed while I was thinking. Please send your request again against the current view.'); return;
         }
         const operation = result.command ?? result;
+        if (operation.action === 'capture') {
+          reply('Capturing the chart for visual inspection…');
+          requestedCapture = await current.capture();
+          continuation = { sessionId: result.sessionId, toolCallId: result.toolCallId, receipt: { status: 'applied', revision: current.snapshot().revision } };
+          continue;
+        }
         let applied: UpdateResult | undefined;
         if (['reset', 'undo', 'redo'].includes(operation.action)) {
           const action = operation.action as 'reset' | 'undo' | 'redo';

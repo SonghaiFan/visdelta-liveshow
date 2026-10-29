@@ -7,7 +7,7 @@ export function createChartMcpServer(bridge) {
   const text = value => ({ content: [{ type: 'text', text: JSON.stringify(value) }] });
   server.registerTool('get_chart_state', { description: 'Read the accepted chart declaration, revision and source rows.', inputSchema: {} }, async () => text(await bridge.state()));
   server.registerTool('inspect_marks', { description: 'Read visible keyed marks with data, pixel bounds and explicit left-to-right/top-to-bottom ordering. Inspect before referring to ordinal positions.', inputSchema: {} }, async () => text(await bridge.inspect()));
-  server.registerTool('capture_chart', { description: 'See the actual chart as a PNG image. Capture before interpreting visual or positional instructions.', inputSchema: {} }, async () => {
+  server.registerTool('capture_chart', { description: 'See the actual chart as a PNG image. Use only when image-based visual inspection is needed or explicitly requested. Prefer state/mark data for ordinary edits and simple ordinal references.', inputSchema: {} }, async () => {
     const image = await bridge.capture();
     return { content: [{ type: 'text', text: JSON.stringify({ revision: image.revision, width: image.width, height: image.height }) }, { type: 'image', mimeType: 'image/png', data: image.dataUrl.split(',')[1] }] };
   });

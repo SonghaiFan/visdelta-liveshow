@@ -70,13 +70,14 @@ network MCP endpoint.
 
 VisDelta owns `view.capture()` and `view.inspectMarks()`; Liveshow never reads
 private renderer structures. Before each request the browser obtains a settled,
-revision-tagged observation and PNG. `capture_chart` returns MCP image content;
+revision-tagged object observation. It generates a PNG only when the model calls
+`capture_chart`, pausing the agent for an explicit browser capture receipt. `capture_chart` returns MCP image content;
 the adapter forwards that PNG to OpenRouter as image input when the model calls
 the tool. Only the chart SVG is shared, not the whole screen or credentials.
 
 Mutating tools return a browser command. The UI runs the real `view.edit()` or
 `view.update()`, then submits the actual application receipt and a fresh
-observation. The model must capture the result before reporting completion.
+observation. The model verifies the result using state or mark inspection; a screenshot is optional when visual verification is needed.
 Stale revisions abort the action. Read tools and mutation validation execute
 through MCP; no arbitrary JavaScript tool exists.
 

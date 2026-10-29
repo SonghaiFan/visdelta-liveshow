@@ -89,14 +89,19 @@ test('visual agent gets PNG and actual sorted marks, applies a tool command and 
  let expected = '';
  await page.route('**/api/liveshow/agent/', route => {
   const body = route.request().postDataJSON();
-  expect(body.capture.dataUrl).toMatch(/^data:image\/png;base64,iVBOR/);
-  expect(body.capture.revision).toBe(body.revision);
   if (!body.sessionId) {
+   expect(body.capture).toBeUndefined();
+   return route.fulfill({ json: { sessionId: 'capture-test', toolCallId: 'capture', command: { action: 'capture' } } });
+  }
+  if (body.sessionId === 'capture-test') {
+   expect(body.capture.dataUrl).toMatch(/^data:image\/png;base64,iVBOR/);
+   expect(body.capture.revision).toBe(body.revision);
    const third = body.observation.orders.leftToRight[2];
    expected = body.observation.marks.find((mark: { id: string }) => mark.id === third).data.product;
    expect(expected).toBe('Atlas');
    return route.fulfill({ json: { sessionId: 'agent-test', toolCallId: 'highlight', trace: [{ tool: 'capture_chart' }, { tool: 'inspect_marks' }, { tool: 'edit_chart' }], command: { action: 'edit', message: { requestId: 'third', baseRevision: body.revision, edits: [{ method: 'highlight', args: [{ product: expected }] }] } } } });
   }
+  expect(body.capture).toBeUndefined();
   expect(body.receipt.status).toBe('applied');
   expect(body.revision).toBe(2);
   return route.fulfill({ json: { explanation: '已高亮第三根 Atlas。', trace: [{ tool: 'capture_chart' }] } });
