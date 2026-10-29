@@ -58,3 +58,32 @@ The server supports the existing bar edit subset: x, y, where, sort, flip, color
 ## Deployment boundary
 
 Do not expose this local server as a shared public service without adding authentication and per-user usage controls. It binds only to loopback and checks request origin/host. API keys are never included in static exports. An eventual authenticated SSE/WebSocket service can use the same versioned edit message contract. Voice input can feed the existing prompt path without changing VisDelta's API.
+
+## Visual MCP agent
+
+The default conversation uses `/api/liveshow/agent/`. The OpenRouter model calls
+real MCP tools through the official SDK's `Client` and `McpServer`, connected by
+`InMemoryTransport`. `server/mcp.mjs` exports a transport-independent server
+factory over a browser bridge: state, PNG capture, visible marks, edit, restore
+and ask-user. This is an in-process MCP integration, not an externally exposed
+network MCP endpoint.
+
+VisDelta owns `view.capture()` and `view.inspectMarks()`; Liveshow never reads
+private renderer structures. Before each request the browser obtains a settled,
+revision-tagged observation and PNG. `capture_chart` returns MCP image content;
+the adapter forwards that PNG to OpenRouter as image input when the model calls
+the tool. Only the chart SVG is shared, not the whole screen or credentials.
+
+Mutating tools return a browser command. The UI runs the real `view.edit()` or
+`view.update()`, then submits the actual application receipt and a fresh
+observation. The model must capture the result before reporting completion.
+Stale revisions abort the action. Read tools and mutation validation execute
+through MCP; no arbitrary JavaScript tool exists.
+
+Agent sessions are bounded to 12 model steps, 8 browser mutation rounds, 16
+active sessions and a five-minute idle lifetime. Screenshots and recent chat
+history are kept in memory only. A new capture replaces the preceding image.
+The UI shows tool names rather than private reasoning. Ambiguous requests use
+`ask_user`, end the turn without editing, and resume through the next user message
+with recent conversation history. A vision-and-tools capable model is required;
+`openai/gpt-4.1-mini` is the configured demo choice.

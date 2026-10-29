@@ -17,6 +17,7 @@
     "test:server": "node --test tests/server/*.test.mjs"
   },
   "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.32.2",
     "cn": "^0.4.0",
     "d3": "^7.9.0",
     "fumadocs-core": "16.17.1",
@@ -25,7 +26,8 @@
     "next": "16.3.8",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
-    "visdelta": "file:vendor/visdelta-0.4.2-empty-state.tgz"
+    "visdelta": "file:vendor/visdelta-0.4.2-observation.tgz",
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "@playwright/test": "1.63.0",

@@ -35,7 +35,7 @@ export function Liveshow() {
   const [thinking, setThinking] = useState(false);
   const [duration, setDuration] = useState(550);
   const [changes, setChanges] = useState<string[]>([]);
-  const [chat, setChat] = useState<{ id: number; prompt: string; reply: string }[]>([]);
+  const [chat, setChat] = useState<{ id: number; prompt: string; reply: string; tools?: string[] }[]>([]);
   const log = useRef<HTMLDivElement>(null);
   useEffect(() => { if (log.current) log.current.scrollTop = log.current.scrollHeight; }, [chat]);
   const pending = useRef<AbortController | null>(null);
@@ -160,32 +160,49 @@ export function Liveshow() {
     pending.current?.abort();
     const controller = new AbortController(); pending.current = controller;
     const id = ++aiId.current;
-    const text = prompt.trim(); const snapshot = current.snapshot();
+    const text = prompt.trim();
     setPrompt(''); setThinking(true);
     setChat(items => [...items.map(item => item.reply === 'Thinking…' ? { ...item, reply: 'Replaced by your next request.' } : item), { id, prompt: text, reply: 'Thinking…' }].slice(-12));
     const reply = (value: string) => setChat(items => items.map(item => item.id === id ? { ...item, reply: value } : item));
     try {
-      const response = await fetch(`${api}/edit/`, { method: 'POST', signal: controller.signal,
-        headers: { 'Content-Type': 'application/json' }, body: json({ prompt: text, ...snapshot }) });
-      const result = await response.json();
-      if (!response.ok) throw new Error(result.error || 'The AI request failed.');
-      if (controller.signal.aborted || view.current !== current) return;
-      if (current.snapshot().revision !== snapshot.revision) {
-        reply('The chart changed while I was thinking. Please send your request again against the current view.'); return;
-      }
-      if (['reset', 'undo', 'redo'].includes(result.action)) {
-        const action = result.action as 'reset' | 'undo' | 'redo';
-        if ((action === 'undo' && !past.current.length) || (action === 'redo' && !future.current.length)) {
-          reply(action === 'undo' ? 'There is no earlier chart state to undo.' : 'There is no undone chart state to redo.'); return;
+      let continuation: { sessionId?: string; toolCallId?: string; receipt?: { status: string; revision?: number } } = {};
+      const tools: string[] = [];
+      for (let step = 0; step < 8; step++) {
+        if (controller.signal.aborted || view.current !== current) return;
+        const observed = current.inspectMarks();
+        const capture = await current.capture();
+        const sent = current.snapshot();
+        if (sent.revision !== observed.revision || sent.revision !== capture.revision) throw new Error('Chart changed during observation. Send your request again.');
+        const response = await fetch(`${api}/agent/`, { method: 'POST', signal: controller.signal,
+          headers: { 'Content-Type': 'application/json' }, body: json({ prompt: text, ...sent, capture, observation: observed, history: chat.slice(-8), ...continuation }) });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error || 'The agent request failed.');
+        if (controller.signal.aborted || view.current !== current) return;
+        tools.push(...(result.trace ?? []).map((entry: { tool: string }) => entry.tool));
+        setChat(items => items.map(item => item.id === id ? { ...item, tools: [...tools] } : item));
+        if (current.snapshot().revision !== sent.revision) {
+          reply('The chart changed while I was thinking. Please send your request again against the current view.'); return;
         }
-        const restored = await restore(action, text);
-        reply(restored?.status === 'applied' ? result.explanation : 'The restoration was not applied.'); return;
+        const operation = result.command ?? result;
+        let applied: UpdateResult | undefined;
+        if (['reset', 'undo', 'redo'].includes(operation.action)) {
+          const action = operation.action as 'reset' | 'undo' | 'redo';
+          if ((action === 'undo' && !past.current.length) || (action === 'redo' && !future.current.length)) {
+            if (!result.command) { reply(action === 'undo' ? 'There is no earlier chart state to undo.' : 'There is no undone chart state to redo.'); return; }
+          } else applied = await restore(action, text);
+        } else if (operation.message) {
+          setSelected('ai'); setDraftComplete(false); setDraft(json(operation.message));
+          applied = await submit(json(operation.message), text);
+        } else { reply(result.explanation || 'No chart changes made.'); return; }
+        if (controller.signal.aborted) return;
+        if (!result.sessionId) {
+          reply(applied?.status === 'applied' ? result.explanation : 'The requested chart update was not applied.'); return;
+        }
+        reply(applied?.status === 'applied' ? 'Checking the updated chart…' : 'The tool could not apply the change; checking the result…');
+        continuation = { sessionId: result.sessionId, toolCallId: result.toolCallId,
+          receipt: { status: applied?.status === 'applied' ? 'applied' : applied?.status === 'superseded' ? 'superseded' : 'failed', revision: current.snapshot().revision } };
       }
-      if (!result.message) { reply(result.explanation); return; }
-      setSelected('ai'); setDraftComplete(false); setDraft(json(result.message));
-      const applied = await submit(json(result.message), text);
-      if (controller.signal.aborted) return;
-      reply(applied?.status === 'applied' ? result.explanation : applied?.status === 'superseded' ? 'Replaced by a newer chart update.' : 'VisDelta could not apply this edit. Your last valid chart is preserved.');
+      reply('Reached the tool limit. Please narrow your request.');
     } catch (reason) {
       if (!controller.signal.aborted) reply(reason instanceof Error ? reason.message : 'Unable to reach the local AI service.');
     } finally {
@@ -220,7 +237,7 @@ export function Liveshow() {
         <aside className="live-conversation" aria-label="Chart conversation">
           <div className="live-chat-heading"><div><h2>Talk to the chart</h2><p>{connection}</p></div><span className={`live-dot ${aiReady ? 'is-ready' : ''}`} aria-hidden="true" /></div>
           <div ref={log} className="live-chat-log" role="log" aria-label="Conversation history" aria-live="polite">
-            {chat.length === 0 ? <div className="live-chat-empty"><p>What would you like to show?</p><span>Try “Show profit instead of revenue, rank highest first, and use blue bars.”</span></div> : chat.map(item => <div key={item.id} className="live-chat-turn"><p className="live-user-message">{item.prompt}</p><p className="live-assistant-message">{item.reply}</p></div>)}
+            {chat.length === 0 ? <div className="live-chat-empty"><p>What would you like to show?</p><span>Try “Show profit instead of revenue, rank highest first, and use blue bars.”</span></div> : chat.map(item => <div key={item.id} className="live-chat-turn"><p className="live-user-message">{item.prompt}</p><p className="live-assistant-message">{item.reply}</p>{!!item.tools?.length && <p className="live-changes" aria-label="Agent tools">{item.tools.join(' → ')}</p>}</div>)}
           </div>
           <form onSubmit={event => { event.preventDefault(); void ask(); }} className="live-composer">
             <label htmlFor="chart-prompt" className="sr-only">Describe a chart change</label>
